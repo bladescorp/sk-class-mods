@@ -70,6 +70,52 @@ public final class CvdTest {
             prev = delta;
         }
         check(mono, "strength monotonic (protan, red)");
+        // new filters
+        Cvd.Type off = Cvd.Type.OFF;
+        float[] gm = Cvd.combined(off, Cvd.Mode.CORRECT, 1f, 1f, 0f);
+        float[] gc2 = Cvd.apply(gm, 0.9f, 0.2f, 0.4f);
+        check(near(gc2[0], gc2[1], 0.002f) && near(gc2[1], gc2[2], 0.002f), "grayscale: equal channels");
+        float[] half = Cvd.apply(Cvd.combined(off, Cvd.Mode.CORRECT, 1f, 0.5f, 0f), 0.9f, 0.2f, 0.4f);
+        check(Math.abs(half[0] - half[2]) < Math.abs(0.9f - 0.4f) && Math.abs(half[0] - half[2]) > 0.01f, "grayscale 50% is between");
+        float[] sm = Cvd.combined(off, Cvd.Mode.CORRECT, 1f, 0f, 1f);
+        float[] so = Cvd.apply(sm, 0.6f, 0.4f, 0.4f);
+        check(so[0] - so[1] > 0.6f - 0.4f + 0.05f, "saturate widens chroma");
+        float[] sg = Cvd.apply(sm, 0.5f, 0.5f, 0.5f);
+        check(near(sg[0], 0.5f, 0.01f) && near(sg[1], 0.5f, 0.01f) && near(sg[2], 0.5f, 0.01f), "saturate keeps grey");
+        check(Cvd.isIdentity(Cvd.combined(off, Cvd.Mode.CORRECT, 1f, 0f, 0f)), "sliders at 0 are the identity");
+        // combination: deutan simulation + 100% grayscale is grey; grayscale wins over saturation
+        float[] cg = Cvd.apply(Cvd.combined(Cvd.Type.DEUTERANOPIA, Cvd.Mode.CORRECT, 1f, 1f, 1f), 0.9f, 0.2f, 0.4f);
+        check(near(cg[0], cg[1], 0.002f) && near(cg[1], cg[2], 0.002f), "grayscale 100% wins over type+saturation");
+        float[] ct = Cvd.apply(Cvd.combined(Cvd.Type.DEUTERANOPIA, Cvd.Mode.CORRECT, 1f, 0f, 0.5f), 0.9f, 0.2f, 0.4f);
+        float[] ct0 = Cvd.apply(Cvd.matrix(Cvd.Type.DEUTERANOPIA, Cvd.Mode.CORRECT, 1f), 0.9f, 0.2f, 0.4f);
+        check(dist(ct, ct0) > 0.02f, "saturation adds to a colourblind type");
+        for (Cvd.Type t : new Cvd.Type[] {Cvd.Type.PROTAN_FLIP, Cvd.Type.DEUTAN_FLIP}) {
+            float[] fm = Cvd.matrix(t, Cvd.Mode.CORRECT, 1f);
+            float[] fr = Cvd.apply(fm, 0.7f, 0.3f, 0.3f), fgr = Cvd.apply(fm, 0.3f, 0.7f, 0.3f);
+            check(fr[0] > 0.7f && fgr[1] < 0.7f, t + ": red up, green down");
+            check(Cvd.apply(fm, 0, 0, 1)[2] > 0.99f, t + ": blue untouched");
+            // the confusable pair must be farther apart than without the filter
+            float plain = dist(r0, g0);
+            check(dist(Cvd.apply(fm, r0[0], r0[1], r0[2]), Cvd.apply(fm, g0[0], g0[1], g0[2])) > plain, t + ": red/green pair separated");
+            // ...and a pair this viewer genuinely confuses (closest green to a red under their simulation)
+            float[] vm = Cvd.matrix(t == Cvd.Type.PROTAN_FLIP ? Cvd.Type.PROTANOPIA : Cvd.Type.DEUTERANOPIA, Cvd.Mode.SIMULATE, 1f);
+            float[] pr = {srgb(0.466f), 0f, 0f}, pg = null;
+            float seenBefore = 9f;
+            for (int i = 1; i <= 400; i++) {
+                float[] cand = {0f, srgb(i / 400f), 0f};
+                float dd = dist(Cvd.apply(vm, pr[0], pr[1], pr[2]), Cvd.apply(vm, cand[0], cand[1], cand[2]));
+                if (dd < seenBefore) {
+                    seenBefore = dd;
+                    pg = cand;
+                }
+            }
+            float[] a1 = Cvd.apply(fm, pr[0], pr[1], pr[2]), a2 = Cvd.apply(fm, pg[0], pg[1], pg[2]);
+            float seenAfter = dist(Cvd.apply(vm, a1[0], a1[1], a1[2]), Cvd.apply(vm, a2[0], a2[1], a2[2]));
+            check(seenAfter > seenBefore + 0.05f, t + ": separated for the viewer (" + seenBefore + " -> " + seenAfter + ")");
+        }
+        check(!Cvd.usesMode(Cvd.Type.PROTAN_FLIP) && Cvd.usesMode(Cvd.Type.TRITANOPIA), "usesMode");
+        check(Cvd.Type.OFF.ordinal() == 0 && Cvd.Type.TRITANOPIA.ordinal() == 3 && Cvd.Type.PROTAN_FLIP.ordinal() == 4, "old ordinals stable");
+        check(Cvd.Type.parse("deutan_flip", Cvd.Type.OFF) == Cvd.Type.DEUTAN_FLIP, "parse yml name");
         check(Cvd.Type.parse("Deuteranopia", Cvd.Type.OFF) == Cvd.Type.DEUTERANOPIA, "parse label");
         check(Cvd.Type.parse("garbage", Cvd.Type.OFF) == Cvd.Type.OFF, "parse garbage falls back");
         System.out.println(fails == 0 ? "PASS" : "FAILURES: " + fails);

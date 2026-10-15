@@ -3,9 +3,9 @@
     "name": "colorblind",
     "description": "Colorblind filter (deuteranopia, protanopia, tritanopia) with strength slider, added to Options > Video. Correct or simulate.",
     "author": "Punch & Vise",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "compatibility": "Yes",
     "type": "code",
-    "pxVersion": "20261005135204"
+    "pxVersion": "20261015001102"
   }
 }

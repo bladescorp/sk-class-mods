@@ -19,7 +19,9 @@ public final class Cvd {
     }
 
     public enum Type {
-        OFF("Off"), DEUTERANOPIA("Deuteranopia"), PROTANOPIA("Protanopia"), TRITANOPIA("Tritanopia");
+        OFF("Off"), DEUTERANOPIA("Deuteranopia"), PROTANOPIA("Protanopia"), TRITANOPIA("Tritanopia"),
+        // Appended after the originals: ordinals/names of old configs stay valid.
+        PROTAN_FLIP("Protan flip"), DEUTAN_FLIP("Deutan flip");
 
         public final String label;
 
@@ -64,6 +66,22 @@ public final class Cvd {
         }
     }
 
+    /** Correct/Simulate only means something for the three deficiency types. */
+    public static boolean usesMode(Type t) {
+        return t == Type.DEUTERANOPIA || t == Type.PROTANOPIA || t == Type.TRITANOPIA;
+    }
+
+    // ---- Tuning constants (linear RGB). Raise to strengthen, lower to soften. ----
+    /** Rec.709 luma weights (linear light). */
+    private static final float[] LUMA = {0.2126f, 0.7152f, 0.0722f};
+    /** Saturation slider: chroma gain at 100% is 1 + SAT_K. */
+    static final float SAT_K = 2f;
+    /** Flip variants: red chroma gain / brightness, green chroma gain / brightness (1 = unchanged). */
+    static final float PROTAN_FLIP_R_SAT = 1.8f, PROTAN_FLIP_R_GAIN = 1.3f,
+        PROTAN_FLIP_G_SAT = 0.6f, PROTAN_FLIP_G_GAIN = 0.9f;
+    static final float DEUTAN_FLIP_R_SAT = 1.5f, DEUTAN_FLIP_R_GAIN = 1.1f,
+        DEUTAN_FLIP_G_SAT = 0.3f, DEUTAN_FLIP_G_GAIN = 0.8f;
+
     static final float[] IDENTITY = {1, 0, 0, 0, 1, 0, 0, 0, 1};
 
     private static final float[] PROTAN = {
@@ -92,6 +110,10 @@ public final class Cvd {
             case DEUTERANOPIA: full = DEUTAN; e = E_RG; break;
             case PROTANOPIA: full = PROTAN; e = E_RG; break;
             case TRITANOPIA: full = TRITAN; e = E_TRI; break;
+            case PROTAN_FLIP:
+                return lerpId(flip(PROTAN_FLIP_R_SAT, PROTAN_FLIP_R_GAIN, PROTAN_FLIP_G_SAT, PROTAN_FLIP_G_GAIN), s);
+            case DEUTAN_FLIP:
+                return lerpId(flip(DEUTAN_FLIP_R_SAT, DEUTAN_FLIP_R_GAIN, DEUTAN_FLIP_G_SAT, DEUTAN_FLIP_G_GAIN), s);
             default: return IDENTITY.clone();
         }
         float[] sim = new float[9];
@@ -110,6 +132,54 @@ public final class Cvd {
             out[i] += IDENTITY[i];
         }
         return out;
+    }
+
+    /** luma + k*(c - luma): k=0 is grey, 1 identity, >1 boosted. */
+    private static float[] saturation(float k) {
+        float[] m = new float[9];
+        for (int r = 0; r < 3; r++) {
+            for (int c = 0; c < 3; c++) {
+                m[r * 3 + c] = (1 - k) * LUMA[c] + (r == c ? k : 0f);
+            }
+        }
+        return m;
+    }
+
+    /** Red row scaled in chroma and brightness, green row likewise, blue untouched. */
+    private static float[] flip(float rSat, float rGain, float gSat, float gGain) {
+        float[] r = saturation(rSat), g = saturation(gSat);
+        float[] m = IDENTITY.clone();
+        for (int c = 0; c < 3; c++) {
+            m[c] = r[c] * rGain;
+            m[3 + c] = g[3 + c] * gGain;
+        }
+        return m;
+    }
+
+    private static float[] lerpId(float[] full, float s) {
+        float[] m = new float[9];
+        for (int i = 0; i < 9; i++) {
+            m[i] = (1 - s) * IDENTITY[i] + s * full[i];
+        }
+        return m;
+    }
+
+    /**
+     * Everything the filter applies: colourblind type first, then the saturation
+     * boost, then grayscale (so grayscale at 100% always wins). Each slider is 0..1
+     * and is the identity at 0.
+     */
+    public static float[] combined(Type type, Mode mode, float strength, float gray, float sat) {
+        float[] m = matrix(type, mode, strength);
+        float sv = Math.max(0f, Math.min(1f, sat));
+        float g = Math.max(0f, Math.min(1f, gray));
+        if (sv > 0f) {
+            m = mul(saturation(1f + SAT_K * sv), m);
+        }
+        if (g > 0f) {
+            m = mul(lerpId(saturation(0f), g), m);
+        }
+        return m;
     }
 
     static float[] mul(float[] a, float[] b) {

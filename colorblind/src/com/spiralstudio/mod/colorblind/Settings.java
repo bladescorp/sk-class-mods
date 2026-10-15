@@ -27,6 +27,9 @@ public final class Settings {
     public static volatile Cvd.Mode mode = Cvd.Mode.CORRECT;
     /** 0..100 */
     public static volatile int strength = DEFAULT_STRENGTH;
+    /** 0..100, independent of the type above; 0 = off. */
+    public static volatile int grayscale;
+    public static volatile int saturation;
 
     private static volatile long saveAt;
     private static volatile boolean dirty;
@@ -46,6 +49,16 @@ public final class Settings {
                 Map<String, Object> cfg = read(file());
                 {
                     type = Cvd.Type.parse(cfg.get("type"), Cvd.Type.OFF);
+                    grayscale = intOr(cfg.get("grayscale"), 0);
+                    saturation = intOr(cfg.get("saturation"), 0);
+                    // grayscale/saturate used to be types; they are their own sliders now
+                    String old = String.valueOf(cfg.get("type")).trim().toLowerCase();
+                    Object s0 = cfg.get("strength");
+                    if (old.equals("grayscale") && grayscale == 0) {
+                        grayscale = intOr(s0, 100);
+                    } else if (old.equals("saturate") && saturation == 0) {
+                        saturation = intOr(s0, 100);
+                    }
                     mode = Cvd.Mode.parse(cfg.get("mode"), Cvd.Mode.CORRECT);
                     Object s = cfg.get("strength");
                     if (s instanceof Number) {
@@ -82,6 +95,10 @@ public final class Settings {
         return m;
     }
 
+    private static int intOr(Object o, int dflt) {
+        return o instanceof Number ? clamp(((Number) o).intValue()) : dflt;
+    }
+
     public static int clamp(int v) {
         return Math.max(0, Math.min(100, v));
     }
@@ -100,6 +117,8 @@ public final class Settings {
         type = Cvd.Type.OFF;
         mode = Cvd.Mode.CORRECT;
         strength = DEFAULT_STRENGTH;
+        grayscale = 0;
+        saturation = 0;
         changed();
     }
 
@@ -117,13 +136,16 @@ public final class Settings {
         File tmp = new File(f.getPath() + ".tmp");
         try (FileWriter out = new FileWriter(tmp)) {
             out.write("# Colorblind filter. Also editable in Options > Video.\n");
-            out.write("# type: off, deuteranopia, protanopia or tritanopia\n");
+            out.write("# type: off, deuteranopia, protanopia, tritanopia, protan_flip or deutan_flip\n");
             out.write("type: " + type.name().toLowerCase() + "\n\n");
             out.write("# correct = shift hard-to-tell colours so you can separate them\n");
-            out.write("# simulate = show what a person with this type sees (for checking)\n");
+            out.write("# simulate = show what a person with this type sees (for checking)\n# (mode only applies to deuteranopia, protanopia and tritanopia)\n");
             out.write("mode: " + mode.name().toLowerCase() + "\n\n");
             out.write("# How strong the effect is, 0 to 100.\n");
-            out.write("strength: " + strength + "\n");
+            out.write("strength: " + strength + "\n\n");
+            out.write("# Extra filters, 0 (off) to 100. They work with any type above, even Off.\n");
+            out.write("grayscale: " + grayscale + "\n");
+            out.write("saturation: " + saturation + "\n");
         } catch (Throwable t) {
             System.out.println("[colorblind] Could not write " + CONFIG + ": " + t);
             return;

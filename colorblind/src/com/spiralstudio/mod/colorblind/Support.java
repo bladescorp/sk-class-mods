@@ -146,9 +146,12 @@ public final class Support {
         // The buttons' text is refreshed by a Runnable that must see the buttons
         // they belong to, so it reads them out of this holder once built.
         e[] btn = new e[3];
+        java.util.List<Runnable> syncs = new java.util.ArrayList<>();
         Runnable refresh = () -> {
+            syncs.forEach(Runnable::run);
             btn[0].setText(Settings.type.label);
-            btn[1].setText(Settings.mode.label);
+            btn[1].setText(Cvd.usesMode(Settings.type) ? Settings.mode.label : "n/a");
+            btn[1].setEnabled(Cvd.usesMode(Settings.type));
             if (model.getValue() != Settings.strength) {
                 model.setValue(Settings.strength);
             }
@@ -176,7 +179,7 @@ public final class Support {
             }
         });
         // b is (min, value, extent, max); extent 1 keeps the thumb on the track at 100.
-        // Three rows only: Options > Video has little spare height and the UI-scale
+        // Few rows: Options > Video has little spare height and the UI-scale
         // box sits just under the table. Mode and Reset share a row; the strength
         // label doubles as the live preview ("Strength 60%").
         addRow(table, ctx, labelStyle, "Colorblind filter", typeBtn);
@@ -191,11 +194,43 @@ public final class Support {
         }
         table.add(status);
         table.add(slider);
+        extraSlider(table, ctx, labelStyle, "Grayscale", () -> Settings.grayscale, v -> Settings.grayscale = v,
+            "Removes colour so only light and dark remain. Works on top of any filter above.", syncs);
+        extraSlider(table, ctx, labelStyle, "Saturation", () -> Settings.saturation, v -> Settings.saturation = v,
+            "Boosts how vivid every colour is. Works on top of any filter above.", syncs);
         refresh.run();
-        typeBtn.setTooltipText("Off, Deuteranopia (red-green), Protanopia (red-green), Tritanopia (blue-yellow).");
+        typeBtn.setTooltipText("Off, Deuteranopia / Protanopia (red-green), Tritanopia (blue-yellow), Protan flip / Deutan flip (brighter red, dimmer green).");
         modeBtn.setTooltipText("Correct: make confusable colours easier to tell apart. Simulate: show what this type sees.");
         slider.setTooltipText("0% leaves the picture alone, 100% is the full effect. Applies immediately.");
         reset.setTooltipText("Turn the filter off and restore the default strength.");
+    }
+
+    /** A "Name 40%" label + slider pair bound to one 0..100 setting; syncs after Reset. */
+    private static void extraSlider(Container table, com.threerings.opengl.util.d ctx, StyleConfig[] labelStyle,
+                                    String name, java.util.function.IntSupplier get,
+                                    java.util.function.IntConsumer set, String tip, java.util.List<Runnable> syncs) {
+        Label label = new Label(ctx, "");
+        applyStyle(label, labelStyle);
+        b model = new b(0, get.getAsInt(), 1, 101);
+        ac slider = new ac(ctx, 0, model);
+        slider.setPreferredSize(170, 20);
+        Runnable sync = () -> {
+            if (model.getValue() != get.getAsInt()) {
+                model.setValue(get.getAsInt());
+            }
+            label.setText(name + " " + get.getAsInt() + "%");
+        };
+        model.addChangeListener((ChangeEvent ev) -> {
+            if (get.getAsInt() != model.getValue()) {
+                set.accept(Settings.clamp(model.getValue()));
+                Settings.changed();
+                label.setText(name + " " + get.getAsInt() + "%");
+            }
+        });
+        syncs.add(sync);
+        table.add(label);
+        table.add(slider);
+        slider.setTooltipText(tip);
     }
 
     private static e button(com.threerings.opengl.util.d ctx, String text, Runnable act, Runnable refresh,
@@ -260,8 +295,9 @@ public final class Support {
 
     static String statusText() {
         if (Settings.type == Cvd.Type.OFF) {
-            return "Filter off";
+            return Settings.grayscale == 0 && Settings.saturation == 0 ? "Filter off" : "Extra filters only";
         }
-        return Settings.type.label + " - " + Settings.mode.label.toLowerCase() + " - " + Settings.strength + "%";
+        String m = Cvd.usesMode(Settings.type) ? " - " + Settings.mode.label.toLowerCase() : "";
+        return Settings.type.label + m + " - " + Settings.strength + "%";
     }
 }

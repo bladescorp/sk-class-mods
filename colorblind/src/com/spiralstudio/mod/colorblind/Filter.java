@@ -75,7 +75,8 @@ final class Filter {
         }
         try {
             Settings.flushIfDue();
-            float[] m = Cvd.matrix(Settings.type, Settings.mode, Settings.strength01());
+            float[] m = Cvd.combined(Settings.type, Settings.mode, Settings.strength01(), Settings.grayscale / 100f,
+                Settings.saturation / 100f);
             if (Cvd.isIdentity(m)) {
                 return;
             }
